@@ -1,2 +1,3 @@
 Different variations of your standard multihead attention block i've created for projects. Some are almost identical to one another with slight tweaks while some are wild abominations straying so far as to not be be recognized as a transformer.. A diffused connected multiblock across several layers adaptly named wormattention. An attention that can decide to skip passing information. A multihead that is modeled after a myelinated axon replete with nodes of Ranvier cleverly named.. myelinatedLayer :P . A lot of the blocks are connected and are not stand alone as-is but they all very well could be.
-
+All work.. Some ell some not so well.. Some ideas are just bad ideas.
+ The attention blocks are all designed to be used with the same input and output dimensions.
