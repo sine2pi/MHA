@@ -313,7 +313,7 @@ def test_attention_metrics(small_multihead):
                 print("Attention weights not available (using SDPA or other method)")
     finally:
         small_multihead._attention = original__attention
-
+        
 def test_gradient_flow(small_multihead):
     """Test that gradients flow properly through the attention mechanism"""
     batch_size = 2
@@ -347,47 +347,6 @@ def test_gradient_flow(small_multihead):
     
     weight_changed = not torch.allclose(initial_q_weight, small_multihead.q.weight)
     assert weight_changed, "Weights did not update after gradient step"
-
-def test_attention_metrics(small_multihead):
-    """Test attention quality metrics"""
-    batch_size = 2
-    seq_len = 12
-    x = torch.randn(batch_size, seq_len, small_multihead.dims, device=device, dtype=dtype)
-    
-    # Extract attention weights for analysis
-    original__attention = small_multihead._attention
-    
-    # Function to capture attention weights
-    def wrapped_attention(*args, **kwargs):
-        output, qk = original__attention(*args, **kwargs)
-        # Handle the case where qk is None
-        if qk is not None:
-            weights = torch.softmax(qk, dim=-1)
-            return output, (qk, weights)
-        else:
-            # For SDPA and other attention types that don't return qk
-            return output, (None, None)
-    
-    try:
-        small_multihead._attention = wrapped_attention
-        output, attention_data = small_multihead(x)
-        
-        if attention_data is not None:
-            qk, weights = attention_data
-            
-            if weights is not None:
-                # Continue with your metrics
-                log_weights = torch.log(weights + 1e-10)
-                entropy = -torch.sum(weights * log_weights, dim=-1)
-                avg_entropy = entropy.mean().item()
-                coverage = (weights > 0.01).float().mean().item()
-                
-                print(f"Attention Entropy: {avg_entropy:.4f}")
-                print(f"Token Coverage: {coverage:.4f}")
-            else:
-                print("Attention weights not available (using SDPA or other method)")
-    finally:
-        small_multihead._attention = original__attention
 
 def test_numerical_stability(small_multihead):
     """Test attention with extreme values to verify numerical stability"""
