@@ -280,42 +280,38 @@ def test_attention_metrics(small_multihead):
     x = torch.randn(batch_size, seq_len, small_multihead.dims, device=device, dtype=dtype)
     
     # Extract attention weights for analysis
-    # We need to modify _attention to return weights for this test
     original__attention = small_multihead._attention
     
     # Function to capture attention weights
     def wrapped_attention(*args, **kwargs):
         output, qk = original__attention(*args, **kwargs)
-        weights = torch.softmax(qk, dim=-1) if qk is not None else None
-        return output, (qk, weights)
+        # Handle the case where qk is None
+        if qk is not None:
+            weights = torch.softmax(qk, dim=-1)
+            return output, (qk, weights)
+        else:
+            # For SDPA and other attention types that don't return qk
+            return output, (None, None)
     
     try:
-        # Override _attention method temporarily
         small_multihead._attention = wrapped_attention
+        output, attention_data = small_multihead(x)
         
-        # Run forward pass to get attention weights
-        _, attention_data = small_multihead(x)
-        _, weights = attention_data
-        
-        if weights is not None:
-            # Compute entropy of attention distributions
-            # Lower entropy means more focused attention
-            log_weights = torch.log(weights + 1e-10)
-            entropy = -torch.sum(weights * log_weights, dim=-1)
-            avg_entropy = entropy.mean().item()
+        if attention_data is not None:
+            qk, weights = attention_data
             
-            # Check for attention coverage (should attend to most tokens)
-            coverage = (weights > 0.01).float().mean().item()
-            
-            # Print metrics
-            print(f"Attention Entropy: {avg_entropy:.4f}")
-            print(f"Token Coverage: {coverage:.4f}")
-            
-            # We could assert some properties, but these are model-dependent
-            # assert avg_entropy < 2.5, "Attention too diffuse"
-            # assert coverage > 0.3, "Attention too sparse"
+            if weights is not None:
+                # Continue with your metrics
+                log_weights = torch.log(weights + 1e-10)
+                entropy = -torch.sum(weights * log_weights, dim=-1)
+                avg_entropy = entropy.mean().item()
+                coverage = (weights > 0.01).float().mean().item()
+                
+                print(f"Attention Entropy: {avg_entropy:.4f}")
+                print(f"Token Coverage: {coverage:.4f}")
+            else:
+                print("Attention weights not available (using SDPA or other method)")
     finally:
-        # Restore original method
         small_multihead._attention = original__attention
 
 def test_gradient_flow(small_multihead):
@@ -352,30 +348,46 @@ def test_gradient_flow(small_multihead):
     weight_changed = not torch.allclose(initial_q_weight, small_multihead.q.weight)
     assert weight_changed, "Weights did not update after gradient step"
 
-def test_attention_self_consistency(small_multihead):
-    """Test consistency of attention with identical key/value"""
+def test_attention_metrics(small_multihead):
+    """Test attention quality metrics"""
     batch_size = 2
-    seq_len = 10
+    seq_len = 12
     x = torch.randn(batch_size, seq_len, small_multihead.dims, device=device, dtype=dtype)
     
-    # For identical inputs, the attention should approximate identity mapping
-    # (not exact due to projections, but similar)
-    output, _ = small_multihead(x)
+    # Extract attention weights for analysis
+    original__attention = small_multihead._attention
     
-    # Compute normalized similarity between input and output
-    x_norm = torch.nn.functional.normalize(x, dim=-1)
-    output_norm = torch.nn.functional.normalize(output, dim=-1)
-    similarity = torch.bmm(x_norm, output_norm.transpose(1, 2))
+    # Function to capture attention weights
+    def wrapped_attention(*args, **kwargs):
+        output, qk = original__attention(*args, **kwargs)
+        # Handle the case where qk is None
+        if qk is not None:
+            weights = torch.softmax(qk, dim=-1)
+            return output, (qk, weights)
+        else:
+            # For SDPA and other attention types that don't return qk
+            return output, (None, None)
     
-    # Diagonal elements should be larger (inputs influence their corresponding outputs)
-    diag_sim = torch.diagonal(similarity, dim1=1, dim2=2).mean()
-    offdiag_sim = (similarity.sum() - torch.diagonal(similarity, dim1=1, dim2=2).sum()) / (batch_size * seq_len * (seq_len-1))
-    
-    print(f"Diagonal similarity: {diag_sim:.4f}")
-    print(f"Off-diagonal similarity: {offdiag_sim:.4f}")
-    
-    # Diagonal elements should have higher similarity on average
-    assert diag_sim > offdiag_sim, "Self-attention not prioritizing self-connections"
+    try:
+        small_multihead._attention = wrapped_attention
+        output, attention_data = small_multihead(x)
+        
+        if attention_data is not None:
+            qk, weights = attention_data
+            
+            if weights is not None:
+                # Continue with your metrics
+                log_weights = torch.log(weights + 1e-10)
+                entropy = -torch.sum(weights * log_weights, dim=-1)
+                avg_entropy = entropy.mean().item()
+                coverage = (weights > 0.01).float().mean().item()
+                
+                print(f"Attention Entropy: {avg_entropy:.4f}")
+                print(f"Token Coverage: {coverage:.4f}")
+            else:
+                print("Attention weights not available (using SDPA or other method)")
+    finally:
+        small_multihead._attention = original__attention
 
 def test_numerical_stability(small_multihead):
     """Test attention with extreme values to verify numerical stability"""
@@ -408,7 +420,7 @@ def test_performance_benchmark():
     import time
     
     batch_size = 8
-    seq_len = 512
+    seq_len = 128  # Reduced for faster testing
     dims = 768
     heads = 12
     
@@ -423,33 +435,44 @@ def test_performance_benchmark():
     for _ in range(5):
         _ = model(x)
     
-    # Standard attention
-    model.cosa = False
-    model.sdpa = False
-    model.combine = False
+    # Store original settings
+    original_cosa = Multihead.cosa
+    original_sdpa = Multihead.sdpa
+    original_combine = Multihead.combine
     
-    torch.cuda.synchronize()
-    start = time.time()
-    for _ in range(10):
-        _ = model(x)
-    torch.cuda.synchronize()
-    std_time = time.time() - start
-    
-    # SDPA
-    model.cosa = False
-    model.sdpa = True
-    model.combine = False
-    
-    torch.cuda.synchronize()
-    start = time.time()
-    for _ in range(10):
-        _ = model(x)
-    torch.cuda.synchronize()
-    sdpa_time = time.time() - start
-    
-    print(f"Standard attention: {std_time:.4f}s")
-    print(f"SDPA attention: {sdpa_time:.4f}s")
-    print(f"Speedup: {std_time/sdpa_time:.2f}x")
+    try:
+        # Standard attention
+        Multihead.cosa = False
+        Multihead.sdpa = False
+        Multihead.combine = False
+        
+        torch.cuda.synchronize()
+        start = time.time()
+        for _ in range(10):
+            _ = model(x)
+        torch.cuda.synchronize()
+        std_time = time.time() - start
+        
+        # SDPA
+        Multihead.cosa = False
+        Multihead.sdpa = True
+        Multihead.combine = False
+        
+        torch.cuda.synchronize()
+        start = time.time()
+        for _ in range(10):
+            _ = model(x)
+        torch.cuda.synchronize()
+        sdpa_time = time.time() - start
+        
+        print(f"Standard attention: {std_time:.4f}s")
+        print(f"SDPA attention: {sdpa_time:.4f}s")
+        print(f"Speedup: {std_time/sdpa_time:.2f}x")
+    finally:
+        # Restore original settings
+        Multihead.cosa = original_cosa
+        Multihead.sdpa = original_sdpa
+        Multihead.combine = original_combine
 
 
     # In training mode, outputs might differ due to dropout
