@@ -373,6 +373,7 @@ def test_numerical_stability(small_multihead):
     x_mixed[:, 1, :] = 1e-6  # Second token has small values
     output_mixed, _ = small_multihead(x_mixed)
     assert not torch.isnan(output_mixed).any(), "NaN values in output with mixed inputs"
+
 def test_performance_benchmark():
     """Benchmark different attention implementations"""
     import time
@@ -431,9 +432,20 @@ def test_performance_benchmark():
         Multihead.cosa = original_cosa
         Multihead.sdpa = original_sdpa
         Multihead.combine = original_combine
-        
+
+def test_dropout_in_training_mode(medium_multihead):
+    """Test that dropout behaves randomly in training mode"""
+    batch_size = 2
+    seq_len = 10
+    x = torch.randn(batch_size, seq_len, medium_multihead.dims, device=device, dtype=dtype)
+    
     # In training mode, outputs might differ due to dropout
-    # This is a probabilistic test, so we don't actually assert anything
+    medium_multihead.train()
+    output1 = medium_multihead(x)[0]
+    output2 = medium_multihead(x)[0]
+    
+    print("Training mode output difference:", torch.abs(output1 - output2).mean().item())
+
     medium_multihead.train()
     _ = medium_multihead(x)[0]
     _ = medium_multihead(x)[0]
