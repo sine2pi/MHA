@@ -313,7 +313,7 @@ def test_attention_metrics(small_multihead):
                 print("Attention weights not available (using SDPA or other method)")
     finally:
         small_multihead._attention = original__attention
-        
+
 def test_gradient_flow(small_multihead):
     """Test that gradients flow properly through the attention mechanism"""
     batch_size = 2
@@ -373,7 +373,6 @@ def test_numerical_stability(small_multihead):
     x_mixed[:, 1, :] = 1e-6  # Second token has small values
     output_mixed, _ = small_multihead(x_mixed)
     assert not torch.isnan(output_mixed).any(), "NaN values in output with mixed inputs"
-
 def test_performance_benchmark():
     """Benchmark different attention implementations"""
     import time
@@ -432,8 +431,7 @@ def test_performance_benchmark():
         Multihead.cosa = original_cosa
         Multihead.sdpa = original_sdpa
         Multihead.combine = original_combine
-
-
+        
     # In training mode, outputs might differ due to dropout
     # This is a probabilistic test, so we don't actually assert anything
     medium_multihead.train()
