@@ -1,4 +1,4 @@
-cant find good ai help these days.. 
+#### cant find good ai help these days.. thats even a faux table of contents.
 ---
 
 # MHA: Variations of Multihead Attention Blocks
