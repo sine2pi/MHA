@@ -2,6 +2,9 @@
 import torch
 
 def taylor_sine(x, order=5):
+
+# sin(x) = sin(a) + cos(a)*(x-a)/1! - sin(a)*(x-a)^2/2! - cos(a)*(x-a)^3/3! + ...
+
     result = torch.zeros_like(x)
     for i in range(order + 1):
         if i % 2 == 1:  
