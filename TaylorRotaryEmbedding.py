@@ -1,4 +1,66 @@
-class TaylorRotaryEmbedding(nn.Module):
+
+import torch
+
+def taylor_sine(x, order=5):
+    result = torch.zeros_like(x)
+    for i in range(order + 1):
+        if i % 2 == 1:  
+            term = x**i / torch.exp(torch.lgamma(torch.tensor(i + 1, dtype=torch.float32)))
+            if (i // 2) % 2 == 1: 
+                result -= term
+            else:
+                result += term
+    return result
+
+def taylor_cosine(x, order=5):
+    result = torch.zeros_like(x)
+    for i in range(order + 1):
+        if i % 2 == 0:  
+            term = x**i / torch.exp(torch.lgamma(torch.tensor(i + 1, dtype=torch.float32)))
+            if (i // 2) % 2 == 1: 
+                result -= term
+            else:
+                result += term
+    return result
+
+class rotary(nn.Module):
+    def __init__(self, dims, head):
+        super(rotary, self).__init__()
+        self.dims = dims
+        self.head = head
+        self.head_dim = dims // head
+
+        self.theta = nn.Parameter((torch.tensor(1600, device=device, dtype=dtype)), requires_grad=False)  
+        self.register_buffer('freqs_base', self._compute_freqs_base(), persistent=False)
+
+    def _compute_freqs_base(self):
+        mel_scale = torch.pow(10, torch.linspace(0, 2595 * torch.log10(torch.tensor(1 + 4000/200)), self.head_dim // 2, device=device, dtype=dtype) / 2595) - 1
+        return 200 * mel_scale / 1000 
+
+    def forward(self, x) -> torch.Tensor:
+
+        positions = (torch.arange(0, x.shape[2], device=x.device))
+        freqs = (self.theta / 220.0) * self.freqs_base
+        freqs = positions[:, None] * freqs 
+
+        with torch.autocast(device_type="cuda", enabled=False):
+            cos = taylor_cosine(freqs, order=self.taylor_order)
+            sin = taylor_sine(freqs, order=self.taylor_order)
+            rotary_dim = cos.shape[-1] 
+            x_rot, x_pass = x[..., :rotary_dim], x[..., rotary_dim:]
+            x_embed = (x_rot * cos) + (rotate_half(x_rot) * sin)
+            x_embed = torch.cat([x_embed, x_pass], dim=-1)
+            return x_embed.type_as(x) 
+
+def rotate_half(x):
+    x1 = x[..., : x.shape[-1] // 2]
+    x2 = x[..., x.shape[-1] // 2 :]
+    return torch.cat((-x2, x1), dim=-1)
+
+############# 
+
+
+class Tippecanoe_and_Tyler_too(nn.Module):
     def __init__(self, dim, max_terms=4, learned_coeff=True, device=None):
         super().__init__()
         self.dim = dim
